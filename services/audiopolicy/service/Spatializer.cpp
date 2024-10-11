@@ -292,6 +292,7 @@ Spatializer::Spatializer(effect_descriptor_t engineDescriptor, SpatializerPolicy
       mPolicyCallback(callback) {
     ALOGV("%s", __func__);
     setMinSchedulerPolicy(SCHED_NORMAL, ANDROID_PRIORITY_AUDIO);
+    setInheritRt(true);
 }
 
 void Spatializer::onFirstRef() {
@@ -1096,7 +1097,7 @@ audio_latency_mode_t Spatializer::selectHeadtrackingConnectionMode_l() {
 }
 
 void Spatializer::checkSensorsState_l() {
-    audio_latency_mode_t requestedLatencyMode = AUDIO_LATENCY_MODE_FREE;
+    mRequestedLatencyMode = AUDIO_LATENCY_MODE_FREE;
     const bool supportsSetLatencyMode = !mSupportedLatencyModes.empty();
     bool supportsLowLatencyMode;
     if (com::android::media::audio::dsa_over_bt_le_audio()) {
@@ -1117,7 +1118,7 @@ void Spatializer::checkSensorsState_l() {
                     && mDesiredHeadTrackingMode != HeadTrackingMode::STATIC
                     && mHeadSensor != SpatializerPoseController::INVALID_SENSOR) {
                 if (supportsLowLatencyMode) {
-                    requestedLatencyMode = selectHeadtrackingConnectionMode_l();
+                    mRequestedLatencyMode = selectHeadtrackingConnectionMode_l();
                 }
                 if (mEngine != nullptr) {
                     setEffectParameter_l(SPATIALIZER_PARAM_HEADTRACKING_MODE,
@@ -1139,9 +1140,9 @@ void Spatializer::checkSensorsState_l() {
     }
     if (mOutput != AUDIO_IO_HANDLE_NONE && supportsSetLatencyMode) {
         const status_t status =
-                AudioSystem::setRequestedLatencyMode(mOutput, requestedLatencyMode);
+                AudioSystem::setRequestedLatencyMode(mOutput, mRequestedLatencyMode);
         ALOGD("%s: setRequestedLatencyMode for output thread(%d) to %s returned %d", __func__,
-              mOutput, toString(requestedLatencyMode).c_str(), status);
+              mOutput, toString(mRequestedLatencyMode).c_str(), status);
     }
 }
 
