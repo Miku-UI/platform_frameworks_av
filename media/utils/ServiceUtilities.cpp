@@ -146,6 +146,7 @@ std::optional<AttributionSourceState> resolveAttributionSource(
     return std::optional<AttributionSourceState>{myAttributionSource};
 }
 
+
 static int checkRecordingInternal(const AttributionSourceState &attributionSource,
                                        const uint32_t virtualDeviceId,
                                        const String16 &msg, bool start, audio_source_t source) {
@@ -168,17 +169,15 @@ static int checkRecordingInternal(const AttributionSourceState &attributionSourc
             return PERMISSION_HARD_DENIED;
         }
 
-        auto permission = source == AUDIO_SOURCE_REMOTE_SUBMIX ?
-                sModifyAudioRouting : sAndroidPermissionRecordAudio;
         permission::PermissionChecker permissionChecker;
         int permitted;
         if (start) {
             permitted = permissionChecker.checkPermissionForStartDataDeliveryFromDatasource(
-                    permission, resolvedAttributionSource.value(), msg,
+                    sAndroidPermissionRecordAudio, resolvedAttributionSource.value(), msg,
                     attributedOpCode);
         } else {
             permitted = permissionChecker.checkPermissionForPreflightFromDatasource(
-                    permission, resolvedAttributionSource.value(), msg,
+                    sAndroidPermissionRecordAudio, resolvedAttributionSource.value(), msg,
                     attributedOpCode);
         }
 
@@ -204,17 +203,17 @@ static constexpr int DEVICE_ID_DEFAULT = 0;
 
 bool recordingAllowed(const AttributionSourceState &attributionSource, audio_source_t source) {
     return checkRecordingInternal(attributionSource, DEVICE_ID_DEFAULT, String16(), /*start*/ false,
-                                  source);
+                                  source) != PERMISSION_HARD_DENIED;
 }
 
 bool recordingAllowed(const AttributionSourceState &attributionSource,
                       const uint32_t virtualDeviceId,
                       audio_source_t source) {
     return checkRecordingInternal(attributionSource, virtualDeviceId,
-                                  String16(), /*start*/ false, source);
+                                  String16(), /*start*/ false, source) != PERMISSION_HARD_DENIED;
 }
 
-bool startRecording(const AttributionSourceState& attributionSource,
+int startRecording(const AttributionSourceState& attributionSource,
                     const uint32_t virtualDeviceId,
                     const String16& msg,
                     audio_source_t source) {
