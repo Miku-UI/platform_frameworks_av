@@ -22,14 +22,18 @@
 #include <map>
 #include <memory>
 #include <vector>
+#include <span>
 
 #include <C2Buffer.h>
 #include <C2Component.h>
 #include <Codec2Mapper.h>
 
+#include <android/hidl/memory/1.0/IMemory.h>
 #include <codec2/hidl/client.h>
-#include <media/stagefright/foundation/Mutexed.h>
 #include <media/stagefright/CodecBase.h>
+#include <media/stagefright/foundation/Mutexed.h>
+#include <utils/LruCache.h>
+#include <utils/TypeHelpers.h>
 
 #include "CCodecBuffers.h"
 #include "FrameReassembler.h"
@@ -39,6 +43,11 @@
 namespace android {
 
 class MemoryDealer;
+
+template <>
+inline hash_t hash_type<sp<hardware::HidlMemory>>(const sp<hardware::HidlMemory>& mem) {
+    return hash_type(mem.get());
+}
 
 class CCodecCallback {
 public:
@@ -103,6 +112,9 @@ public:
     void pollForRenderedBuffers() override;
     void onBufferReleasedFromOutputSurface(uint32_t generation) override;
     void onBufferAttachedToOutputSurface(uint32_t generation) override;
+    void onBufferDetachedFromOutputSurface(uint32_t generation, uint64_t bufferId) override;
+    void onBuffersRemovedFromOutputSurface(uint32_t generation,
+                                           const std::vector<uint64_t>& bufferIds) override;
     status_t discardBuffer(const sp<MediaCodecBuffer> &buffer) override;
     void getInputBufferArray(Vector<sp<MediaCodecBuffer>> *array) override;
     void getOutputBufferArray(Vector<sp<MediaCodecBuffer>> *array) override;
@@ -312,6 +324,7 @@ private:
     void feedInputBufferIfAvailableInternal();
     status_t queueInputBufferInternal(sp<MediaCodecBuffer> buffer,
                                       std::shared_ptr<C2LinearBlock> encryptedBlock = nullptr,
+                                      std::vector<std::shared_ptr<C2Info>> c2Infos = {},
                                       size_t blockSize = 0);
     bool handleWork(
             std::unique_ptr<C2Work> work,
@@ -321,18 +334,25 @@ private:
     void sendOutputBuffers();
     void ensureDecryptDestination(size_t size);
     int32_t getHeapSeqNum(const sp<hardware::HidlMemory> &memory);
+    sp<android::hidl::memory::V1_0::IMemory> getSourceIMemory(
+            const sp<hardware::HidlMemory>& memory);
 
     void initializeFrameTrackingFor(ANativeWindow * window);
     void trackReleasedFrame(const IGraphicBufferProducer::QueueBufferOutput& qbo,
                             int64_t mediaTimeUs, int64_t desiredRenderTimeNs);
     void processRenderedFrames(const FrameEventHistoryDelta& delta);
     int64_t getRenderTimeNs(const TrackedFrame& frame);
+    bool fetchAndCopyEncryptedInfoBuffer(
+            const std::span<const uint8_t> input,
+            std::shared_ptr<C2LinearBlock> *encryptedBlock,
+            size_t *blockSize);
 
     QueueSync mSync;
     sp<MemoryDealer> mDealer;
     sp<IMemory> mDecryptDestination;
     int32_t mHeapSeqNum;
     std::map<wp<hardware::HidlMemory>, int32_t> mHeapSeqNumMap;
+    LruCache<sp<hardware::HidlMemory>, sp<android::hidl::memory::V1_0::IMemory>> mSourceMemoryMap;
 
     std::shared_ptr<Codec2Client::Component> mComponent;
     std::string mComponentName; ///< component name for debugging
@@ -426,6 +446,8 @@ private:
         return mCrypto != nullptr || mDescrambler != nullptr;
     }
     std::atomic_bool mSendEncryptedInfoBuffer;
+    std::atomic_bool mSendEncryptionInfo;
+    std::atomic_bool mSendEncryptionKeyHandle;
 
     std::atomic_bool mTunneled;
 
